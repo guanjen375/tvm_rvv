@@ -1,0 +1,5 @@
+if(USE_my_device)
+     message(STATUS "Build with my_device")
+     tvm_file_glob(GLOB RUNTIME_my_device_SRCS src/runtime/my_device/*.cc)
+         list(APPEND RUNTIME_SRCS ${RUNTIME_my_device_SRCS})
+endif(USE_my_device)
