@@ -59,20 +59,13 @@ my_device_target = (
 host_llvm_target = "c"
 
 with tvm.target.Target(my_device_target, host=host_llvm_target):
-    # 組合自訂 TIR pipeline：先跑預設，再附加 FixZeroAllocations
-    custom_tir_pipeline = tvm.ir.transform.Sequential([
-        tvm.tir.pipeline.default_tir_pipeline(),
-        tvm.tir.transform.FixZeroAllocations(),
-    ])
-
-    # 只編譯 ONNX（mobilenet）
+    # 只編譯 ONNX（mobilenet），使用預設 TIR pipeline
     if onnx_ok and mod is not None:
         mod = relax.transform.LegalizeOps()(mod)
         ex = relax.build(
             mod,
             target=tvm.target.Target(my_device_target, host=host_llvm_target),
             params=params,
-            tir_pipeline=custom_tir_pipeline,
         )
 
 if ex is not None:
