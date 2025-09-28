@@ -63,11 +63,8 @@ Pass AnnotateDeviceRegions() {
     auto opt_target = func->GetAttr<Target>(tvm::attr::kTarget);
     ICHECK(opt_target) << "AnnotateDeviceRegions: Require the target attribute";
     Target target = opt_target.value();
-    // 如果 target.kind 为 "my_device"，直接包装整个函数体
     if (target->keys[0] == "my_device") {
-      // 包装整个函数体，不依赖内部 AttrStmt 的存在
       func.CopyOnWrite()->body = AttrStmt(target.WithoutHost(), tvm::attr::kTarget, 0, func->body);
-      std::cout << "AnnotateDeviceRegions: Wrapped entire function body for my_device" << "\n";
     } else if (target->GetHost()) {
       // 对于其他设备，保持原有逻辑
       DeviceRegionAnnotater mutator(target.WithoutHost());

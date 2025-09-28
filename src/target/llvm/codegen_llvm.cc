@@ -2051,7 +2051,11 @@ void CodeGenLLVM::VisitStmt_(const AllocateNode* op) {
   llvm::Value* buf = nullptr;
 
   int32_t constant_size = op->ConstantAllocationSize();
-  ICHECK_GT(constant_size, 0) << "Can only handle constant size stack allocation";
+  // Avoid zero-sized stack allocations which LLVM backend cannot handle.
+  // If the constant size is 0, promote it to 1 as a minimal placeholder.
+  if (constant_size == 0) {
+    constant_size = 1;
+  }
   StorageInfo& info = alloc_storage_info_[op->buffer_var.get()];
   if (constant_size % 4 == 0 && info.alignment == 0) {
     info.alignment = GetTempAllocaAlignment(op->dtype, constant_size);

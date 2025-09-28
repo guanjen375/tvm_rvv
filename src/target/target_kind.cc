@@ -321,8 +321,25 @@ TVM_REGISTER_TARGET_KIND("c", kDLCPU)
     .set_target_parser(tvm::target::parsers::cpu::ParseTarget);
 
 TVM_REGISTER_TARGET_KIND("my_device", kDLmy_device)
-    .set_default_keys({"my_device"})
-    .set_default_keys({"my_device", "cpu"});
+    .add_attr_option<Array<String>>("mattr")
+    .add_attr_option<String>("mcpu")
+    .add_attr_option<String>("mtriple")
+    .add_attr_option<String>("mfloat-abi")
+    .add_attr_option<String>("mabi")
+    .add_attr_option<runtime::Int>("num-cores")
+    .add_attr_option<runtime::Bool>("fast-math")
+    .add_attr_option<runtime::Bool>("fast-math-nnan")
+    .add_attr_option<runtime::Bool>("fast-math-ninf")
+    .add_attr_option<runtime::Bool>("fast-math-nsz")
+    .add_attr_option<runtime::Bool>("fast-math-arcp")
+    .add_attr_option<runtime::Bool>("fast-math-contract")
+    .add_attr_option<runtime::Bool>("fast-math-reassoc")
+    .add_attr_option<runtime::Int>("opt-level")
+    .add_attr_option<Array<String>>("cl-opt")
+    .add_attr_option<String>("jit")
+    .add_attr_option<runtime::Int>("vector-width")
+    .set_default_keys({"my_device", "cpu"})
+    .set_target_parser(tvm::target::parsers::cpu::ParseTarget);
    
 
 TVM_REGISTER_TARGET_KIND("cuda", kDLCUDA)

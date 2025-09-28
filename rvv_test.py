@@ -4,6 +4,7 @@
 import sys, onnx, tvm
 from tvm import relax
 from tvm.contrib import cc
+from tvm.script import ir as I, relax as R
 
 # try both import paths (TVM branch compatibility)
 try:
@@ -14,36 +15,110 @@ except Exception:
 NAME   = sys.argv[1]
 MODEL  = NAME + ".onnx"
 OUT_SO = NAME + ".so"
-CROSS  = "riscv64-unknown-linux-gnu-g++"  # 依你的工具鏈
+CROSS  = "riscv64-linux-gnu-g++"  # 依你的工具鏈
 
-# 1) Load ONNX -> Relax
-m = onnx.load(MODEL)
+ex = None
+mod = None
+params = None
 
-# 可能的回傳差異：有的版本回傳 (mod, params)，有的只回傳 mod
-ret = from_onnx(m)  # 若你的 ONNX 已含固定 shape/dtype，這樣即可；否則可自行補 shape_dict/dtype
-if isinstance(ret, tuple):
-    mod, params = ret
-else:
-    # 舊版：先把綁在 mod 裡的參數拆出來
-    try:
-        from tvm.relax.frontend import detach_params
-    except Exception:
-        # 有些分支掛在 relax.frontend 底下
-        detach_params = relax.frontend.detach_params
-    mod, params = detach_params(ret)
+# 1) Load ONNX -> Relax（若 onnx 版本不相容，跳過 ONNX 路徑，只跑最小驗證）
+try:
+    m = onnx.load(MODEL)
+    ret = from_onnx(m)
+    if isinstance(ret, tuple):
+        mod, params = ret
+    else:
+        try:
+            from tvm.relax.frontend import detach_params
+        except Exception:
+            detach_params = relax.frontend.detach_params
+        mod, params = detach_params(ret)
+    onnx_ok = True
+except ImportError as e:
+    print("[WARN] 解析 ONNX 需要相容版本的 onnx 套件，建議安裝 onnx==1.15.0 或較舊版本。\n", e)
+    onnx_ok = False
+except ModuleNotFoundError as e:
+    print("[WARN] 找不到 onnx 子模組（可能為 onnx.mapping 於新版本移除），建議安裝 onnx==1.15.0。\n", e)
+    onnx_ok = False
+except Exception as e:
+    print("[WARN] 載入或轉換 ONNX 失敗，先跳過 ONNX 編譯，只驗證 my_device：\n", e)
+    onnx_ok = False
 
-# 2) RISC-V target（需要 RVV 就留 +v；若裝置不支援，移除 +v）
-target = (
-    "llvm -device=riscv_cpu "
-    "-mtriple=riscv64-unknown-linux-gnu "
+# 2) my_device + RVV 的 target（交由 Buildmy_device 轉傳給 LLVM）
+my_device_target = (
+    "my_device "
+    "-mtriple=riscv64-linux-gnu "
     "-mcpu=generic-rv64 "
     "-mattr=+m,+a,+f,+d,+c,+v "
-    "-mabi=lp64d"
+    "-vector-width=256 "
+    "-opt-level=3"
 )
 
-# 3) Build & export .so（參數會嵌進可執行檔）
-with tvm.transform.PassContext(opt_level=3):
-    ex = relax.build(mod, target=target, params=params)
+# 與裝置一致的 host LLVM target（避免 host=x86 與 device=riscv 混用導致 linker 格式不符）
+# Host 改用 C 後端，讓最終由 CROSS 交叉編譯並連結，避免 x86 與 riscv 物件混用
+host_llvm_target = "c"
 
-ex.export_library(OUT_SO, fcompile=cc.cross_compiler(CROSS))
-print("Compile to:", OUT_SO)
+# 3) 最小驗證：建一個簡單張量加法，確定 my_device 可跑
+@I.ir_module
+class MiniAdd:
+    I.module_global_infos({
+        "vdevice": [
+            I.vdevice("llvm"),
+            I.vdevice("my_device"),
+        ]
+    })
+    @R.function
+    def main(x: R.Tensor((1, 4), "float32"), y: R.Tensor((1, 4), "float32")) -> R.Tensor((1, 4), "float32"):
+        with R.dataflow():
+            # 放到 my_device 上做加法
+            x_dev: R.Tensor((1, 4), "float32", "my_device") = R.to_vdevice(x, "my_device")
+            y_dev: R.Tensor((1, 4), "float32", "my_device") = R.to_vdevice(y, "my_device")
+            z: R.Tensor((1, 4), "float32", "my_device") = R.add(x_dev, y_dev)
+            R.output(z)
+        return z
+
+# 4) 先對 MiniAdd 驗證，再編譯 ONNX 模型
+with tvm.target.Target("c"):
+    pass
+
+with tvm.target.Target(my_device_target, host="llvm"):
+    # 組合自訂 TIR pipeline：先跑預設，再附加 FixZeroAllocations
+    custom_tir_pipeline = tvm.ir.transform.Sequential([
+        tvm.tir.pipeline.default_tir_pipeline(),
+        tvm.tir.transform.FixZeroAllocations(),
+    ])
+    # 4.1 驗證 my_device 的最小範例
+    mini_mod = MiniAdd
+    mini_mod = relax.transform.LegalizeOps()(mini_mod)
+    mini_mod = tvm.tir.transform.FlattenBuffer()(mini_mod)
+    mini_mod = tvm.tir.transform.Defaultmy_deviceSchedule()(mini_mod)
+    mini_exe = relax.build(
+        mini_mod,
+        target=tvm.target.Target(my_device_target, host=host_llvm_target),
+        tir_pipeline=custom_tir_pipeline,
+    )
+    print("mini my_device build ok")
+
+    # 4.2 編譯 ONNX（可選）
+    if onnx_ok and mod is not None:
+        mod = relax.transform.LegalizeOps()(mod)
+
+        # Apply scheduling first
+        mod = tvm.tir.transform.Defaultmy_deviceSchedule()(mod)
+        # 再套用較安全的 TIR pass，避免產生「宣告前存取」情況
+        mod = tvm.tir.transform.RemoveNoOp()(mod)
+        mod = tvm.tir.transform.Simplify()(mod)
+        mod = tvm.tir.transform.FlattenBuffer()(mod)
+        mod = tvm.tir.transform.FixZeroAllocations()(mod)
+        ex = relax.build(
+            mod,
+            target=tvm.target.Target(my_device_target, host=host_llvm_target),
+            params=params,
+            tir_pipeline=custom_tir_pipeline,
+        )
+
+if ex is not None:
+    ex.export_library(OUT_SO, fcompile=cc.cross_compiler(CROSS))
+    print("Compile to:", OUT_SO)
+else:
+    print("跳過 ONNX 匯出（僅驗證 my_device 最小範例成功）")

@@ -409,59 +409,58 @@ inline void CodeGenmy_device::PrintTernaryCondExpr(const T* op, const char* comp
 }
 
 runtime::Module Buildmy_device(IRModule mod, Target target) {
-  std::cout << "call my device codegen\n";
+  // 臨時路由：將 my_device 的 device-side 編譯直接交給 LLVM 後端
   using tvm::runtime::Registry;
-  bool output_ssa = false;
-  bool emit_asserts = false;
-  bool emit_fwd_func_decl = true;
+  // 構造一個 LLVM target，若 my_device 帶有 RVV/LLVM 相關屬性，則轉傳給 LLVM
+  std::string llvm_target_str = "llvm";
 
-  std::unordered_set<std::string> devices;
-  if (mod->GetAttr<Map<GlobalVar, String>>("device_contexts") != nullptr) {
-    Map<GlobalVar, String> device_contexts =
-        mod->GetAttr<Map<GlobalVar, String>>("device_contexts").value();
-    for (auto const& context : device_contexts) {
-      devices.insert(context.second.data());
+  if (auto v = target->GetAttr<String>("mtriple")) {
+    llvm_target_str += " -mtriple=" + v.value();
+  }
+  if (auto v = target->GetAttr<String>("mcpu")) {
+    llvm_target_str += " -mcpu=" + v.value();
+  }
+  if (auto v = target->GetAttr<Array<String>>("mattr")) {
+    std::string feats;
+    bool first = true;
+    for (const String& s : v.value()) {
+      if (!first) feats += ",";
+      feats += s;
+      first = false;
+    }
+    if (!feats.empty()) {
+      llvm_target_str += " -mattr=" + feats;
+    }
+  }
+  if (auto v = target->GetAttr<runtime::Int>("vector-width")) {
+    llvm_target_str += " -vector-width=" + std::to_string(static_cast<int>(v.value()));
+  }
+  if (auto v = target->GetAttr<runtime::Int>("opt-level")) {
+    llvm_target_str += " -opt-level=" + std::to_string(static_cast<int>(v.value()));
+  }
+  if (auto v = target->GetAttr<String>("jit")) {
+    llvm_target_str += " -jit=" + v.value();
+  }
+
+  // 若使用者指定了 riscv mtriple 但未指定 +v，預設補上 RVV 特徵與保守的 vector-width
+  if (llvm_target_str.find("-mtriple=") != std::string::npos) {
+    auto pos = llvm_target_str.find("-mtriple=");
+    auto triple = llvm_target_str.substr(pos + 9);
+    if (triple.find("riscv") != std::string::npos) {
+      if (llvm_target_str.find("-mattr=") == std::string::npos) {
+        llvm_target_str += " -mattr=+v";
+      }
+      if (llvm_target_str.find("-vector-width=") == std::string::npos) {
+        // 若未指定，預設 256 bits；可由使用者覆寫為實際 VLEN
+        llvm_target_str += " -vector-width=256";
+      }
     }
   }
 
-  CodeGenmy_device cg;
-  cg.Init(output_ssa, emit_asserts, emit_fwd_func_decl, target->str(), devices);
-  cg.SetConstantsByteAlignment(target->GetAttr<Integer>("constants-byte-alignment").value_or(16));
-
-  auto is_aot_executor_fn = [](const PrimFunc& func) -> bool {
-    return func->GetAttr<Bool>("runner_function", Bool(false)).value();
-  };
-
-  std::vector<std::pair<GlobalVar, PrimFunc>> funcs;
-  for (auto [gvar, base_func] : mod->functions) {
-    ICHECK(base_func->IsInstance<PrimFuncNode>()) << "CodegenCHost: Can only take PrimFunc";
-    auto prim_func = Downcast<PrimFunc>(base_func);
-    funcs.push_back({gvar, prim_func});
-  }
-
-  // Sort functions
-  auto sort_key = [&is_aot_executor_fn](const auto& kv) {
-    return std::tuple{is_aot_executor_fn(kv.second), kv.first->name_hint};
-  };
-  std::sort(funcs.begin(), funcs.end(), [&sort_key](const auto& kv_a, const auto& kv_b) {
-    return sort_key(kv_a) < sort_key(kv_b);
-  });
-
-  for (const auto& [gvar, prim_func] : funcs) {
-    cg.DeclareFunction(gvar, prim_func);
-  }
-
-  // Codegen all functions.  Passing emit_fwd_func_decl=true adds a
-  // forward declaration for any `builtin::call_extern`, based on the
-  // arguments provided to it.
-  for (const auto& [gvar, prim_func] : funcs) {
-    cg.AddFunction(gvar, prim_func, emit_fwd_func_decl);
-  }
-
-  std::string code = cg.Finish();
-  //std::cout << "Device:" << '\n';
-  //std::cout << code << "\n";
-  return my_deviceModuleCreate(code, "cc", ExtractFuncInfo(mod), code);
+  Target llvm_tgt = Target(llvm_target_str);
+  const PackedFunc* bf = Registry::Get("target.build.llvm");
+  ICHECK(bf != nullptr) << "target.build.llvm is not enabled";
+  return (*bf)(mod, llvm_tgt);
 }
 
 TVM_REGISTER_GLOBAL("target.build.my_device").set_body_typed(Buildmy_device);

@@ -48,33 +48,11 @@ IRModule MarkScheduled_my_device(const IRModule& mod) {
 Pass Defaultmy_deviceSchedule() {
   runtime::TypedPackedFunc<IRModule(IRModule, PassContext)> pass_func =  //
       [=](IRModule m, PassContext pc) {
-        tir::Schedule sch = tir::Schedule::Traced(m, /*seed=*/-1, /*debug_mask=*/0,
-                                                  tir::ScheduleErrorRenderLevel::kDetail);
-        for (const auto& [gv, func] : m->functions) {
-          if (func->IsInstance<tir::PrimFuncNode>() && !func->HasNonzeroAttr(attr::kIsScheduled) ) {
-            // get the target from context.
-            tvm::Target target = tvm::Target::Current();
-            // get the target from kTarget attribute
-            Optional<tvm::Target> func_target =
-                func->attrs.GetAttr<tvm::Target>(tvm::attr::kTarget);
-            if (func_target.defined()) {
-              target = func_target.value();
-            }
-            ICHECK(target.defined()) << "The target is missing either in the current context or in "
-                                        "the prim_func's attribute.";
-            
-            
-            sch->WorkOn(gv->name_hint);
-            Array<tir::BlockRV> blocks = meta_schedule::BlockCollector::Collect(sch);
-            for (const tir::BlockRV& block : blocks) {
-              auto childs = sch->GetChildBlocks(block);
-              if (!childs.empty()) {
-                continue;
-              }
-            }
-          }
-        }
-        return MarkScheduled_my_device(sch->mod());
+        // For my_device target, we just mark the functions as scheduled
+        // without applying any specific scheduling transformations.
+        // This is a simple pass-through that allows the LLVM backend
+        // to handle the code generation directly.
+        return MarkScheduled_my_device(m);
       };
   return CreateModulePass(/*pass_function=*/pass_func,         //
                           /*opt_level=*/0,                     //

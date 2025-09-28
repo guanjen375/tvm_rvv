@@ -1100,6 +1100,19 @@ def Defaultmy_deviceSchedule():
     return _ffi_api.Defaultmy_deviceSchedule()  # type: ignore
 
 
+def FixZeroAllocations():
+    """Fix zero-size allocations that can't be handled by LLVM backend.
+    
+    This pass replaces allocations with constant size 0 with minimal allocations
+    of size 1 to prevent LLVM codegen errors.
+    
+    Returns
+    -------
+    ret: tvm.transform.Pass
+    """
+    return _ffi_api.FixZeroAllocations()  # type: ignore
+
+
 def UseAssumeToReduceBranches():
     """This pass attempts to eliminates layout specific pad branch by overcomputing the values
     for padded region. Eliminating the branch will help to vectorize code,

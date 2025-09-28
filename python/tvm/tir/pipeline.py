@@ -145,6 +145,8 @@ def finalize_device_passes():  # pylint: disable=unused-argument
         tir.transform.LowerCustomDatatypes(),
         tir.transform.LowerDeviceStorageAccessInfo(),
         tir.transform.LowerIntrin(),
+        # 防止最終階段新增/保留的 Allocate 出現 0 大小，導致 LLVM 堆疊配置失敗
+        tir.transform.FixZeroAllocations(),
     ]
     return tvm.ir.transform.Sequential(device_pass_list)
 
