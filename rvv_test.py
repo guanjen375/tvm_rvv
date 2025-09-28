@@ -58,58 +58,16 @@ my_device_target = (
 # Host 改用 C 後端，讓最終由 CROSS 交叉編譯並連結，避免 x86 與 riscv 物件混用
 host_llvm_target = "c"
 
-# 3) 最小驗證：建一個簡單張量加法，確定 my_device 可跑
-@I.ir_module
-class MiniAdd:
-    I.module_global_infos({
-        "vdevice": [
-            I.vdevice("llvm"),
-            I.vdevice("my_device"),
-        ]
-    })
-    @R.function
-    def main(x: R.Tensor((1, 4), "float32"), y: R.Tensor((1, 4), "float32")) -> R.Tensor((1, 4), "float32"):
-        with R.dataflow():
-            # 放到 my_device 上做加法
-            x_dev: R.Tensor((1, 4), "float32", "my_device") = R.to_vdevice(x, "my_device")
-            y_dev: R.Tensor((1, 4), "float32", "my_device") = R.to_vdevice(y, "my_device")
-            z: R.Tensor((1, 4), "float32", "my_device") = R.add(x_dev, y_dev)
-            R.output(z)
-        return z
-
-# 4) 先對 MiniAdd 驗證，再編譯 ONNX 模型
-with tvm.target.Target("c"):
-    pass
-
-with tvm.target.Target(my_device_target, host="llvm"):
+with tvm.target.Target(my_device_target, host=host_llvm_target):
     # 組合自訂 TIR pipeline：先跑預設，再附加 FixZeroAllocations
     custom_tir_pipeline = tvm.ir.transform.Sequential([
         tvm.tir.pipeline.default_tir_pipeline(),
         tvm.tir.transform.FixZeroAllocations(),
     ])
-    # 4.1 驗證 my_device 的最小範例
-    mini_mod = MiniAdd
-    mini_mod = relax.transform.LegalizeOps()(mini_mod)
-    mini_mod = tvm.tir.transform.FlattenBuffer()(mini_mod)
-    mini_mod = tvm.tir.transform.Defaultmy_deviceSchedule()(mini_mod)
-    mini_exe = relax.build(
-        mini_mod,
-        target=tvm.target.Target(my_device_target, host=host_llvm_target),
-        tir_pipeline=custom_tir_pipeline,
-    )
-    print("mini my_device build ok")
 
-    # 4.2 編譯 ONNX（可選）
+    # 只編譯 ONNX（mobilenet）
     if onnx_ok and mod is not None:
         mod = relax.transform.LegalizeOps()(mod)
-
-        # Apply scheduling first
-        mod = tvm.tir.transform.Defaultmy_deviceSchedule()(mod)
-        # 再套用較安全的 TIR pass，避免產生「宣告前存取」情況
-        mod = tvm.tir.transform.RemoveNoOp()(mod)
-        mod = tvm.tir.transform.Simplify()(mod)
-        mod = tvm.tir.transform.FlattenBuffer()(mod)
-        mod = tvm.tir.transform.FixZeroAllocations()(mod)
         ex = relax.build(
             mod,
             target=tvm.target.Target(my_device_target, host=host_llvm_target),
