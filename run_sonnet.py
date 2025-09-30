@@ -32,13 +32,18 @@ except Exception as e:
     print("[HINT] 請確認已執行 rvv_test.py 產生 .so 檔案")
     sys.exit(1)
 
-# 2) 設定裝置：使用 CPU
-#    重要：雖然編譯時 target 是 'my_device' (RISC-V + RVV)，
-#    但 RVV 是 CPU 的向量指令集擴展（類似 x86 的 AVX、ARM 的 NEON），
-#    因此 Runtime 應使用 tvm.cpu() 作為執行上下文。
-#    TVM Runtime 會自動調用為 RVV 編譯的機器碼。
-device = tvm.cpu(0)
-print(f"[INFO] 使用裝置：CPU (device_type={device.device_type}, RVV 指令將在 CPU 上執行)")
+# 2) 設定裝置：使用 my_device
+#    重要：my_device 是獨立註冊的裝置類型（kDLmy_device = 17），
+#    雖然其 DeviceAPI 實現類似 CPU（使用 memcpy 等標準操作），
+#    但它在 TVM Runtime 中是與 CPU (kDLCPU = 1) 不同的裝置。
+#    編譯時指定 my_device target → 執行時需使用 my_device device。
+try:
+    device = tvm.my_device(0)
+    print(f"[INFO] 使用裝置：my_device (device_type={device.device_type})")
+except (AttributeError, RuntimeError) as e:
+    print(f"[WARN] my_device runtime 未啟用：{e}")
+    print("[WARN] 回退至 cpu (可能無法正確執行)")
+    device = tvm.cpu(0)
 
 # 3) 建立 Relax VM 執行器
 #    TVM 0.20：使用 relax.VirtualMachine
