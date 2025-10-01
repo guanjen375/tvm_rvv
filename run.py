@@ -1,110 +1,116 @@
+# run.py
+# 載入編譯後的 .so 並在 my_device 上執行推論
+
+import sys
+import os
 import tvm
 from tvm import relax
 import numpy as np
-import time
-import os
 
-def main():
-    # --- 1. 配置設定 ---
-    LIB_PATH = "./mobilenet.so"
-    
-    # MobileNet 的標準輸入形狀和數據類型 (請根據您的模型確認)
-    INPUT_SHAPE = (1, 3, 224, 224)
-    DTYPE = "float32"
+# 解析命令列參數
+if len(sys.argv) < 2:
+    print("Usage: python run.py <model_name> [input_shape]")
+    print("Example: python run.py mobilenet")
+    print("")
+    print("請先執行：python3 compile_model.py <model_name>")
+    sys.exit(1)
 
-    print("--- TVM Relax Python Runtime ---")
+NAME = sys.argv[1]
+SO_FILE = NAME + ".so"
 
-    # 檢查 .so 檔案是否存在
-    if not os.path.exists(LIB_PATH):
-        print(f"Error: Library file not found at {LIB_PATH}")
-        print("Please run rvv_test.py first to generate mobilenet.so")
-        return
+# 預設輸入形狀（MobileNet）
+INPUT_SHAPE = (1, 3, 224, 224)
+if len(sys.argv) >= 3:
+    # 允許自訂輸入形狀，例如 "1,3,224,224"
+    INPUT_SHAPE = tuple(map(int, sys.argv[2].split(",")))
 
-    # --- 2. 定義執行設備 (Device Context) ---
-    # 雖然您的 target 是 'my_device' (RVV)，但它是 CPU 的擴展指令集。
-    # 因此，在 Runtime 中，我們使用 tvm.cpu() 作為執行上下文。
-    # TVM Runtime 會自動調用為 RVV 編譯的代碼。
-    device = tvm.cpu(0)
-    print(f"Executing on device: {device}")
+print("=" * 70)
+print(f"執行 {NAME} 模型推論")
+print("=" * 70)
+print(f"[INFO] 載入模組：{SO_FILE}")
+print(f"[INFO] 輸入形狀：{INPUT_SHAPE}")
 
-    # --- 3. 載入編譯後的庫 (.so) ---
-    print(f"Loading library from: {LIB_PATH}")
-    try:
-        # 使用 tvm.runtime.load_module 載入 .so
-        lib = tvm.runtime.load_module(LIB_PATH)
-    except Exception as e:
-        print(f"\nError loading module: {e}")
-        return
+# 檢查 runtime 編譯器設定
+compiler_env = os.environ.get("TVM_MY_DEVICE_COMPILER")
+if compiler_env:
+    print(f"[INFO] Runtime 編譯器：{compiler_env}")
+    if "riscv" in compiler_env:
+        print(f"[INFO] 架構：RISC-V + RVV")
+else:
+    print(f"[INFO] Runtime 編譯器：g++（host 架構）")
 
-    # --- 4. 初始化 Relax 虛擬機 (VM) ---
-    # VM 負責解釋和執行編譯後的模型。
+# 1) 載入編譯好的 .so 模組
+print(f"\n[1/4] 載入模組...")
+try:
+    lib = tvm.runtime.load_module(SO_FILE)
+    print(f"✓ 載入成功")
+except Exception as e:
+    print(f"✗ 無法載入 {SO_FILE}：{e}")
+    print(f"[HINT] 請先執行：python3 compile_model.py {NAME}")
+    sys.exit(1)
+
+# 2) 設定裝置：使用 my_device
+print(f"\n[2/4] 設定裝置...")
+try:
+    device = tvm.my_device(0)
+    print(f"✓ 使用裝置：my_device (device_type={device.device_type})")
+except (AttributeError, RuntimeError) as e:
+    print(f"✗ my_device runtime 未啟用：{e}")
+    print(f"[HINT] 確認 TVM 編譯時啟用了 my_device")
+    sys.exit(1)
+
+# 3) 建立 Relax VM 執行器
+print(f"\n[3/4] 建立 VirtualMachine...")
+try:
     vm = relax.VirtualMachine(lib, device)
-    print("Relax VM initialized.")
+    print(f"✓ VirtualMachine 建立成功")
+except Exception as e:
+    print(f"✗ 無法建立 VirtualMachine：{e}")
+    print(f"[HINT] 確認 .so 是否為 Relax 模組且包含 'main' 函式")
+    sys.exit(1)
 
-    # --- 5. 準備輸入數據 ---
-    # 這裡我們使用隨機數據作為範例。在實際應用中，請替換為圖像加載和預處理邏輯。
-    print("Preparing input data...")
-    np_data = np.random.uniform(0, 1, size=INPUT_SHAPE).astype(DTYPE)
+# 4) 執行推論
+print(f"\n[4/4] 執行推論...")
+print(f"  準備輸入資料...")
+input_data = np.random.randn(*INPUT_SHAPE).astype("float32")
+
+# 將 NumPy 陣列轉換為 TVM NDArray
+try:
+    input_tvm = tvm.nd.array(input_data, device=device)
+except Exception as e:
+    print(f"✗ 無法建立 TVM NDArray：{e}")
+    sys.exit(1)
+
+try:
+    print(f"  執行 main 函數...")
+    print(f"  [註] 第一次執行會動態編譯 C++ code，請稍候...")
     
-    # 將 NumPy 數組轉換為 TVM NDArray，並將其放置在目標設備上
-    input_tensor = tvm.nd.array(np_data, device)
-
-    # Relax 模型通常可以直接接受位置參數。
-    model_inputs = input_tensor
-
-    # --- 6. 執行模型 ---
-    print("Running inference...")
+    # TVM 0.20 Relax API：vm["main"](input)
+    output = vm["main"](input_tvm)
     
-    # 調用 VM 中的 "main" 函數來執行模型。"main" 是 Relax 模型預設的入口函數名稱。
-    try:
-        start_time = time.time()
-        output = vm["main"](model_inputs)
-        # 確保所有操作完成 (對於準確計時很重要)
-        device.sync() 
-        end_time = time.time()
-    except Exception as e:
-        print(f"\nError during execution: {e}")
-        print("如果錯誤提到參數不匹配 (mismatched arguments)，")
-        print("請嘗試確認您的輸入變數名稱 (例如 'data') 並改用字典傳入參數：")
-        print("例如： output = vm[\"main\"]({\"data\": input_tensor})")
-        return
+    # 若輸出為 tuple，取第一個元素
+    if isinstance(output, (tuple, list)):
+        output = output[0]
     
-    print(f"Inference finished in {(end_time - start_time)*1000:.2f} ms.")
-
-    # --- 7. 處理輸出結果 ---
-    # 將輸出從 TVM NDArray 轉換回 NumPy 數組進行分析
+    # 轉回 NumPy
+    output_np = output.numpy()
     
-    # Relax 的輸出可能是結構化的 (ADT/Tuple)。對於 MobileNet，通常是單個 Tensor。
-    if isinstance(output, tvm.runtime.container.ADT):
-        # 如果是結構化輸出，取第一個元素
-        if len(output) == 0:
-            print("Error: Output structure is empty.")
-            return
-        output_np = output[0].numpy()
-    else:
-        # 如果是單個 Tensor 輸出
-        output_np = output.numpy()
+    print(f"\n✓ 推論完成！")
+    print(f"  - 輸出形狀：{output_np.shape}")
+    print(f"  - 輸出範圍：[{output_np.min():.6f}, {output_np.max():.6f}]")
+    
+    # 若為分類任務，顯示前 5 個預測類別
+    if output_np.ndim == 2 and output_np.shape[0] == 1:
+        top5_idx = np.argsort(output_np[0])[-5:][::-1]
+        print(f"  - Top-5 預測類別：{top5_idx.tolist()}")
+        print(f"  - Top-5 分數：{output_np[0][top5_idx].tolist()}")
+    
+except Exception as e:
+    print(f"\n✗ 推論失敗：{e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
 
-    # 計算 Top-1 預測結果
-    top1_index = np.argmax(output_np[0])
-    top1_score = output_np[0][top1_index]
-
-    print("\n--- Results ---")
-    print(f"Output shape: {output_np.shape}")
-    print(f"Top-1 Prediction Index: {top1_index}")
-    print(f"Top-1 Score: {top1_score}")
-
-    # --- 8. (可選) 使用 Time Evaluator 進行性能評估 ---
-    print("\n--- Benchmarking (using time_evaluator) ---")
-    # 使用 TVM 內建的 time_evaluator 進行多次運行，獲得更精確的性能數據
-    try:
-        # 評估 "main" 函數，運行 10 次，重複 3 輪
-        ftimer = vm.time_evaluator("main", device, number=10, repeat=3)
-        prof_res = np.array(ftimer(model_inputs).results) * 1000  # 轉換為毫秒
-        print(f"Mean inference time: {np.mean(prof_res):.2f} ms (std: {np.std(prof_res):.2f} ms)")
-    except Exception as e:
-        print(f"Benchmarking failed: {e}")
-
-
-if __name__ == "__main__":
-    main()
+print("\n" + "=" * 70)
+print("✓ 執行完成")
+print("=" * 70)

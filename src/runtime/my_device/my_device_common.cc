@@ -87,79 +87,17 @@ ffi_type* map_type(const std::string& type_str) {
   return nullptr;
 }
 
+/*
+ * compile_model_dynamic - 不再需要
+ * 
+ * 使用 LLVM backend 時，所有編譯都在 x86 上由 LLVM + cross-compiler 完成
+ * Runtime 直接載入編譯好的 DSO module，不需要動態編譯
+ */
+
 DynamicKernel compile_model_dynamic(const std::string& data_, const std::string& func_name) {
   DynamicKernel dk;
-  dk.func_ptr = nullptr;  // 預設失敗
-
-  // 取得 HOME 目錄
-  const char* home_env = std::getenv("HOME");
-  if (home_env == nullptr) {
-    std::cerr << "無法取得 HOME 環境變數。\n";
-    return dk;
-  }
-  std::string home_dir(home_env);
-
-  // 1. 採取多線程
-  std::string data_modify = update_codegen_multithread(data_);
-
-  // 2. 產生臨時原始檔案：利用 func_name 保證唯一性
-  std::string tmp_source = home_dir + "/" + func_name + ".cc";
-  std::ofstream ofs(tmp_source);
-  if (!ofs.is_open()) {
-    std::cerr << "無法打開檔案 " << tmp_source << " 進行寫入。\n";
-    return dk;
-  }
-  ofs << data_modify;
-  ofs.close();
-  
-
-  // 3. 編譯成共享庫
-  std::string so_file = home_dir + "/" + func_name + ".so";
-  std::string compile_cmd = "g++ -O2 -fPIC -shared -fpermissive -fopenmp -o " + so_file + " " + tmp_source;
-  compile_cmd += " -I" + home_dir + "/tvm/include";
-  compile_cmd += " -I" + home_dir + "/tvm/3rdparty/dlpack/include";
-  compile_cmd += " -I" + home_dir + "/tvm/3rdparty/dmlc-core/include -lffi";
-  std::cout << "compile command:" << compile_cmd << "\n";
-  int compile_status = std::system(compile_cmd.c_str());
-  if (compile_status != 0) {
-    std::cerr << "編譯過程出現錯誤，狀態碼：" << compile_status << "\n";
-    return dk;
-  }
-
-  // 4. 動態載入共享庫
-  void* handle = dlopen(so_file.c_str(), RTLD_LAZY);
-  if (!handle) {
-    std::cerr << "dlopen 錯誤: " << dlerror() << "\n";
-    return dk;
-  }
-  dlerror();  // 清除舊錯誤
-
-  dk.func_ptr = dlsym(handle, func_name.c_str());
-  const char* dlsym_err = dlerror();
-  if (dlsym_err) {
-    std::cerr << "dlsym 取得 " << func_name << " 時發生錯誤: " << dlsym_err << "\n";
-    return dk;
-  }
-
-  // 5. 從 data_ 中解析函數簽名
-  KernelSignature sig = parse_kernel_signature(data_, func_name);
-
-  // 6. 根據參數型態建立 arg_types 向量
-  for (const std::string& ptype : sig.param_types) {
-    ffi_type* ft = map_type(ptype);
-    if (ft != nullptr) {
-      dk.arg_types.push_back(ft);
-    } else {
-      std::cerr << "錯誤處理參數型別: " << ptype << "\n";
-    }
-  }
-
-  // 7. 設定回傳型態，目前固定為 void（可依需求擴充）
-  ffi_type* ret_type = &ffi_type_void;
-  size_t nargs = dk.arg_types.size();
-  if (ffi_prep_cif(&dk.cif, FFI_DEFAULT_ABI, nargs, ret_type, dk.arg_types.data()) != FFI_OK) {
-    std::cerr << "ffi_prep_cif 建立失敗\n";
-    dk.func_ptr = nullptr;
-  }
+  dk.func_ptr = nullptr;
+  LOG(FATAL) << "compile_model_dynamic should not be called when using LLVM backend. "
+             << "Functions are already compiled in the DSO module.";
   return dk;
 }

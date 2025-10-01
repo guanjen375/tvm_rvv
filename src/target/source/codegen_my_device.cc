@@ -409,9 +409,10 @@ inline void CodeGenmy_device::PrintTernaryCondExpr(const T* op, const char* comp
 }
 
 runtime::Module Buildmy_device(IRModule mod, Target target) {
-  // 臨時路由：將 my_device 的 device-side 編譯直接交給 LLVM 後端
+  // 將 my_device target 參數轉傳給 LLVM backend，支援交叉編譯
   using tvm::runtime::Registry;
-  // 構造一個 LLVM target，若 my_device 帶有 RVV/LLVM 相關屬性，則轉傳給 LLVM
+  
+  // 構造 LLVM target，轉傳 my_device 的所有 LLVM 相關屬性
   std::string llvm_target_str = "llvm";
 
   if (auto v = target->GetAttr<String>("mtriple")) {
@@ -432,34 +433,39 @@ runtime::Module Buildmy_device(IRModule mod, Target target) {
       llvm_target_str += " -mattr=" + feats;
     }
   }
-  if (auto v = target->GetAttr<runtime::Int>("vector-width")) {
-    llvm_target_str += " -vector-width=" + std::to_string(static_cast<int>(v.value()));
+  if (auto v = target->GetAttr<String>("mfloat-abi")) {
+    llvm_target_str += " -mfloat-abi=" + v.value();
+  }
+  if (auto v = target->GetAttr<String>("mabi")) {
+    llvm_target_str += " -mabi=" + v.value();
+  }
+  if (auto v = target->GetAttr<runtime::Int>("num-cores")) {
+    llvm_target_str += " -num-cores=" + std::to_string(static_cast<int>(v.value()));
   }
   if (auto v = target->GetAttr<runtime::Int>("opt-level")) {
     llvm_target_str += " -opt-level=" + std::to_string(static_cast<int>(v.value()));
   }
-  if (auto v = target->GetAttr<String>("jit")) {
-    llvm_target_str += " -jit=" + v.value();
-  }
 
-  // 若使用者指定了 riscv mtriple 但未指定 +v，預設補上 RVV 特徵與保守的 vector-width
+  // 若使用者指定了 RISC-V mtriple 但未指定 +v，預設補上 RVV 特徵
   if (llvm_target_str.find("-mtriple=") != std::string::npos) {
     auto pos = llvm_target_str.find("-mtriple=");
-    auto triple = llvm_target_str.substr(pos + 9);
+    auto triple_end = llvm_target_str.find(" ", pos);
+    if (triple_end == std::string::npos) triple_end = llvm_target_str.length();
+    auto triple = llvm_target_str.substr(pos + 9, triple_end - pos - 9);
+    
     if (triple.find("riscv") != std::string::npos) {
       if (llvm_target_str.find("-mattr=") == std::string::npos) {
-        llvm_target_str += " -mattr=+v";
-      }
-      if (llvm_target_str.find("-vector-width=") == std::string::npos) {
-        // 若未指定，預設 256 bits；可由使用者覆寫為實際 VLEN
-        llvm_target_str += " -vector-width=256";
+        llvm_target_str += " -mattr=+m,+a,+f,+d,+c,+v";
       }
     }
   }
 
+  // 構造 LLVM target 並調用 LLVM backend
   Target llvm_tgt = Target(llvm_target_str);
   const PackedFunc* bf = Registry::Get("target.build.llvm");
   ICHECK(bf != nullptr) << "target.build.llvm is not enabled";
+  
+  // 直接返回 LLVM module（支援交叉編譯）
   return (*bf)(mod, llvm_tgt);
 }
 
