@@ -411,12 +411,9 @@ inline void CodeGenmy_device::PrintTernaryCondExpr(const T* op, const char* comp
 runtime::Module Buildmy_device(IRModule mod, Target target) {
   using tvm::runtime::Registry;
 
-// 選擇編譯模式：
-// - TVM_MY_DEVICE_USE_LLVM: LLVM backend（用於 RVV 交叉編譯等）
-// - 否則: C++ codegen + runtime 動態編譯（用於其他 device）
-#ifdef TVM_MY_DEVICE_USE_LLVM
-  // ========== LLVM Backend 模式（RVV/交叉編譯）==========
-  LOG(INFO) << "[my_device codegen] Using LLVM backend mode";
+  // my_device 統一使用 LLVM backend（生成 RVV 機器碼）
+  LOG(INFO) << "[my_device codegen] Using LLVM backend for RVV";
+  
   // 構造 LLVM target，轉傳 my_device 的所有 LLVM 相關屬性
   std::string llvm_target_str = "llvm";
 
@@ -470,51 +467,8 @@ runtime::Module Buildmy_device(IRModule mod, Target target) {
   const PackedFunc* bf = Registry::Get("target.build.llvm");
   ICHECK(bf != nullptr) << "target.build.llvm is not enabled";
   
-  // 返回 LLVM module（支援交叉編譯）
+  // 返回 LLVM module（RVV 機器碼）
   return (*bf)(mod, llvm_tgt);
-
-#else
-  // ========== C++ Codegen 模式（其他 device）==========
-  LOG(INFO) << "[my_device codegen] Using C++ source codegen + runtime compilation mode";
-  bool output_ssa = false;
-  bool emit_asserts = false;
-  bool emit_fwd_func_decl = true;
-
-  std::unordered_set<std::string> devices;
-  if (mod->GetAttr<Map<GlobalVar, String>>("device_contexts") != nullptr) {
-    Map<GlobalVar, String> device_contexts =
-        mod->GetAttr<Map<GlobalVar, String>>("device_contexts").value();
-    for (auto const& context : device_contexts) {
-      devices.insert(context.second.data());
-    }
-  }
-
-  CodeGenmy_device cg;
-  cg.Init(output_ssa, emit_asserts, emit_fwd_func_decl, target->str(), devices);
-
-  std::vector<std::pair<GlobalVar, PrimFunc>> funcs;
-  for (auto [gvar, base_func] : mod->functions) {
-    ICHECK(base_func->IsInstance<PrimFuncNode>()) << "CodeGenmy_device: Can only take PrimFunc";
-    auto prim_func = Downcast<PrimFunc>(base_func);
-    funcs.push_back({gvar, prim_func});
-  }
-
-  // Declare all functions first
-  for (const auto& [gvar, prim_func] : funcs) {
-    cg.DeclareFunction(gvar, prim_func);
-  }
-
-  // Then add function implementations
-  for (const auto& [gvar, prim_func] : funcs) {
-    cg.AddFunction(gvar, prim_func, emit_fwd_func_decl);
-  }
-
-  std::string code = cg.Finish();
-  
-  // 提取函數資訊並返回 my_device module
-  std::unordered_map<std::string, runtime::FunctionInfo> fmap = ExtractFuncInfo(mod);
-  return runtime::my_deviceModuleCreate(code, "cc", fmap, code);
-#endif
 }
 
 TVM_REGISTER_GLOBAL("target.build.my_device").set_body_typed(Buildmy_device);

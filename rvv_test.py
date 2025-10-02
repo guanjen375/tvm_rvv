@@ -44,19 +44,18 @@ except Exception as e:
     print("[WARN] 載入或轉換 ONNX 失敗，先跳過 ONNX 編譯，只驗證 my_device：\n", e)
     onnx_ok = False
 
-# 2) my_device + RVV 的 target（交由 Buildmy_device 轉傳給 LLVM）
+# 2) my_device target - 使用 LLVM 生成 RVV 機器碼
+# my_device 作為設備抽象，內部使用 LLVM 生成 RISC-V RVV 指令
 my_device_target = (
     "my_device "
     "-mtriple=riscv64-linux-gnu "
     "-mcpu=generic-rv64 "
     "-mattr=+m,+a,+f,+d,+c,+v "
-    "-vector-width=256 "
     "-opt-level=3"
 )
 
-# 與裝置一致的 host LLVM target（避免 host=x86 與 device=riscv 混用導致 linker 格式不符）
-# Host 改用 C 後端，讓最終由 CROSS 交叉編譯並連結，避免 x86 與 riscv 物件混用
-host_llvm_target = "c"
+# Host 使用 LLVM
+host_llvm_target = "llvm"
 
 with tvm.target.Target(my_device_target, host=host_llvm_target):
     # 只編譯 ONNX（mobilenet），使用預設 TIR pipeline
@@ -69,7 +68,10 @@ with tvm.target.Target(my_device_target, host=host_llvm_target):
         )
 
 if ex is not None:
+    # 使用交叉編譯器生成 RISC-V RVV 機器碼
     ex.export_library(OUT_SO, fcompile=cc.cross_compiler(CROSS))
     print("Compile to:", OUT_SO)
+    print("注意：此 .so 包含 LLVM 生成的 RISC-V RVV 機器碼")
+    print("可直接在 RISC-V 設備（如 Banana Pi）上執行")
 else:
     print("跳過 ONNX 匯出（僅驗證 my_device 最小範例成功）")
