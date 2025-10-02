@@ -55,7 +55,7 @@ def compile_mod(
         mod = tvm.tir.transform.DefaultGPUSchedule()(mod)
     elif(device_str == "my_device"):
         mod = tvm.tir.transform.Defaultmy_deviceSchedule()(mod)
-    target = tvm.target.Target(target=device_str, host="llvm")
+    target = tvm.target.Target(target=device_str, host="c")
     exe = relax.build(mod, target )
     exe.export_library('/home/david/test.so')
     return relax.VirtualMachine(exe, ctx)

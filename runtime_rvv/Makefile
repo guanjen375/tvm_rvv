@@ -1,13 +1,24 @@
+##############################################################################
+# TVM Runtime for my_device (LLVM Mode)
+#
+# 此 runtime 專用於執行透過 LLVM backend 編譯的 my_device 模組
+# - my_device 使用 LLVM 生成 RISC-V RVV 機器碼
+# - Runtime 直接從 .so 調用已編譯的 kernel（不需要動態編譯）
+# - 只包含必要的設備 API（記憶體管理、設備抽象）
+##############################################################################
+
 OBJ=./obj
 EXEC=./exec.out
 
-CC=g++
+# 使用 RISC-V 交叉編譯器（在 Banana Pi 上執行）
+CC=riscv64-linux-gnu-g++
 LDFLAGS=-ldl -lpthread -rdynamic -lffi
 INCLUDE=$(addprefix -I,./include ./include/dlpack/include ./include/support ./include/picojson)
 
 # 所有來源檔
-# 注意：不包含 my_device_module.cc（LLVM mode 不需要）
-# 只包含 my_device_device_api.cc（提供設備抽象）
+# 只包含 LLVM 模式需要的檔案：
+# - my_device_device_api.cc：提供設備記憶體管理和設備抽象
+# - 不包含 my_device_module.cc：LLVM 模式不需要動態編譯
 SRC = \
   src/main.cc \
   src/module.cc \
@@ -42,7 +53,7 @@ build: $(OBJECTS)
 # 單個 .o 編譯規則
 $(OBJ)/%.o: src/%.cc
 	@mkdir -p $(dir $@)
-	$(CC) $(INCLUDE) -std=c++17 -w -c -o $@ $<
+	$(CC) $(INCLUDE) $(CFLAGS) -std=c++17 -w -c -o $@ $<
 
 run:
 	$(EXEC)

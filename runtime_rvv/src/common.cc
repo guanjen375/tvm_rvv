@@ -35,14 +35,22 @@ std::vector<tvm::runtime::NDArray> create_input(json meta)
         auto shape = info["shape"].get<std::vector<int64_t>>();
         auto dtype = GetDTypeByStr(info["dtype"]);
         auto device = GetDeviceByStr(info["device"]);
+        
+        // 計算總元素數量（支援任意維度）
+        int64_t total_elements = 1;
+        for (auto dim : shape) {
+            total_elements *= dim;
+        }
+        
         auto arr = tvm::runtime::NDArray::Empty(shape, dtype, device);
+        
         if (dtype.code == kDLInt && dtype.bits == 32)
         {
-            std::fill_n(static_cast<int32_t *>(arr->data), shape[0] * shape[1], 2);
+            std::fill_n(static_cast<int32_t *>(arr->data), total_elements, 2);
         }
         else if (dtype.code == kDLFloat && dtype.bits == 32)
         {
-            std::fill_n(static_cast<float *>(arr->data), shape[0] * shape[1], 2.0f);
+            std::fill_n(static_cast<float *>(arr->data), total_elements, 0.5f);
         }
         inputs.push_back(arr);
     }

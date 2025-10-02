@@ -43,6 +43,16 @@ int main()
     json meta = json::parse(ifs);
 
     auto input = create_input(meta);
+    std::cout << "✅ 已建立 " << input.size() << " 個輸入張量\n";
+    for (size_t i = 0; i < input.size(); ++i) {
+        std::cout << "  Input[" << i << "]: shape=(";
+        for (int d = 0; d < input[i]->ndim; ++d) {
+            std::cout << input[i]->shape[d];
+            if (d < input[i]->ndim - 1) std::cout << ",";
+        }
+        std::cout << "), device=" << input[i]->device.device_type << "\n";
+    }
+    
     auto executor = vm_mod.GetFunction("executor");
     tvm::runtime::TVMRetValue out;
     
