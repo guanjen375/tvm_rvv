@@ -55,7 +55,7 @@ my_device_target = (
 )
 
 # Host 使用 LLVM
-host_llvm_target = "llvm"
+host_llvm_target = "c"
 
 with tvm.target.Target(my_device_target, host=host_llvm_target):
     # 只編譯 ONNX（mobilenet），使用預設 TIR pipeline
