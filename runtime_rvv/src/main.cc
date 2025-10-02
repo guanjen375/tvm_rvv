@@ -57,7 +57,9 @@ int main()
     }
 
     tvm::runtime::TVMArgs args(values.data(), type_codes.data(), input.size());
+    std::cout << "before run\n";
     executor.CallPacked(args, &out);
+    std::cout << "after run\n";
 
     // 印出輸出結果
     tvm::runtime::NDArray output = out;
