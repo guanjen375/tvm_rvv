@@ -416,6 +416,7 @@ runtime::Module Buildmy_device(IRModule mod, Target target) {
 // - 否則: C++ codegen + runtime 動態編譯（用於其他 device）
 #ifdef TVM_MY_DEVICE_USE_LLVM
   // ========== LLVM Backend 模式（RVV/交叉編譯）==========
+  LOG(INFO) << "[my_device codegen] Using LLVM backend mode";
   // 構造 LLVM target，轉傳 my_device 的所有 LLVM 相關屬性
   std::string llvm_target_str = "llvm";
 
@@ -474,6 +475,7 @@ runtime::Module Buildmy_device(IRModule mod, Target target) {
 
 #else
   // ========== C++ Codegen 模式（其他 device）==========
+  LOG(INFO) << "[my_device codegen] Using C++ source codegen + runtime compilation mode";
   bool output_ssa = false;
   bool emit_asserts = false;
   bool emit_fwd_func_decl = true;

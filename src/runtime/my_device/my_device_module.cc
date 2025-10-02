@@ -31,17 +31,20 @@ namespace runtime {
 Module my_deviceModuleCreate(std::string data, std::string fmt,
                              std::unordered_map<std::string, FunctionInfo> fmap,
                              std::string source) {
-  LOG(FATAL) << "my_deviceModuleCreate should not be called when using LLVM backend";
+  LOG(FATAL) << "[my_device runtime] my_deviceModuleCreate should not be called when using LLVM backend. "
+             << "TVM_MY_DEVICE_USE_LLVM is defined but my_device module is being created.";
   return Module();
 }
 
 Module my_deviceModuleLoadBinary(void* strm) {
-  LOG(FATAL) << "my_deviceModuleLoadBinary should not be called when using LLVM backend";
+  LOG(FATAL) << "[my_device runtime] my_deviceModuleLoadBinary should not be called when using LLVM backend. "
+             << "TVM_MY_DEVICE_USE_LLVM is defined but trying to load my_device binary module.";
   return Module();
 }
 
 #else
 // ========== C++ Runtime 動態編譯模式 ==========
+// 此模式下會在 runtime 動態編譯 C++ source code
 struct my_deviceWrappedFunc {
  public:
   void Init(const std::string& func_name, const std::size_t arg_size, const std::string data) {
@@ -52,6 +55,7 @@ struct my_deviceWrappedFunc {
 
   void operator()(TVMArgs args, TVMRetValue* ret, void** addr) const {
     // 準備參數
+    LOG(INFO) << "[my_device runtime] Invoking C++ runtime dynamic compilation for function: " << func_name_;
     std::cout << "call c++ runtime\n";
     std::vector<void*> arg_data(arg_size_, nullptr);
     for (std::size_t i = 0; i < arg_size_; i++) {
@@ -112,11 +116,14 @@ String my_deviceModuleNode::GetSource(const String& format) {
 Module my_deviceModuleCreate(std::string data, std::string fmt,
                              std::unordered_map<std::string, FunctionInfo> fmap,
                              std::string source) {
+  LOG(INFO) << "[my_device runtime] Creating my_device module (C++ runtime mode) with " 
+            << fmap.size() << " functions";
   auto n = make_object<my_deviceModuleNode>(data, fmt, fmap, source);
   return Module(n);
 }
 
 Module my_deviceModuleLoadBinary(void* strm) {
+  LOG(INFO) << "[my_device runtime] Loading my_device binary module (C++ runtime mode)";
   dmlc::Stream* stream = static_cast<dmlc::Stream*>(strm);
   std::string data;
   std::unordered_map<std::string, FunctionInfo> fmap;
