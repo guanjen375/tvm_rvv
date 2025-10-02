@@ -52,6 +52,7 @@ struct my_deviceWrappedFunc {
 
   void operator()(TVMArgs args, TVMRetValue* ret, void** addr) const {
     // 準備參數
+    std::cout << "call c++ runtime\n";
     std::vector<void*> arg_data(arg_size_, nullptr);
     for (std::size_t i = 0; i < arg_size_; i++) {
       DLTensor* tensor = reinterpret_cast<DLTensor*>(addr[i]);

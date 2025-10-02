@@ -1,0 +1,35 @@
+======================================================================
+執行 mobilenet 模型推論
+======================================================================
+[INFO] 載入模組：mobilenet.so
+[INFO] 輸入形狀：(1, 3, 224, 224)
+[INFO] Runtime 編譯器：g++（host 架構）
+
+[1/4] 載入模組...
+✓ 載入成功
+
+[2/4] 設定裝置...
+✓ 使用裝置：my_device (device_type=17)
+
+[3/4] 建立 VirtualMachine...
+✓ VirtualMachine 建立成功
+
+[4/4] 執行推論...
+  準備輸入資料...
+  執行 main 函數...
+  [註] 第一次執行會動態編譯 C++ code，請稍候...
+
+✗ 推論失敗：Traceback (most recent call last):
+  10: _ZN3tvm7runtime13PackedFuncObj9ExtractorINS0_16PackedFuncSubObjIZNS0_8relax_vm18VirtualMachineImpl15_LookupFunctionERKNS0_6StringEEUlNS0_7TVMA
+  9: tvm::runtime::relax_vm::VirtualMachineImpl::InvokeClosurePacked(tvm::runtime::ObjectRef const&, tvm::runtime::TVMArgs, tvm::runtime::TVMRetValue*)
+  8: tvm::runtime::PackedFuncObj::Extractor<tvm::runtime::PackedFuncSubObj<tvm::runtime::relax_vm::VirtualMachineImpl::GetClosureInternal(tvm::runtime::String const&, bool)::{lambda(tvm::runtime::TVMArgs, tvm::runtime::TVMRetValue*)#1}> >::Call(tvm::runtime::PackedFuncObj const*, tvm::runtime::TVMArgs, tvm::runtime::TVMRetValue*)
+  7: tvm::runtime::relax_vm::VirtualMachineImpl::InvokeBytecode(long, std::vector<tvm::runtime::TVMRetValue, std::allocator<tvm::runtime::TVMRetValue> > const&)
+  6: tvm::runtime::relax_vm::VirtualMachineImpl::RunLoop()
+  5: tvm::runtime::relax_vm::VirtualMachineImpl::RunInstrCall(tvm::runtime::relax_vm::VMFrame*, tvm::runtime::relax_vm::Instruction)
+  4: tvm::runtime::relax_vm::VirtualMachineImpl::InvokeClosurePacked(tvm::runtime::ObjectRef const&, tvm::runtime::TVMArgs, tvm::runtime::TVMRetValue*)
+  3: tvm::runtime::PackedFuncObj::Extractor<tvm::runtime::PackedFuncSubObj<tvm::runtime::WrapPackedFunc(int (*)(TVMValue*, int*, int, TVMValue*, int*, void*), tvm::runtime::ObjectPtr<tvm::runtime::Object> const&)::{lambda(tvm::runtime::TVMArgs, tvm::runtime::TVMRetValue*)#1}> >::Call(tvm::runtime::PackedFuncObj const*, tvm::runtime::TVMArgs, tvm::runtime::TVMRetValue*)
+  2: conv2d
+  1: TVMBackendGetFuncFromEnv
+  0: tvm::runtime::ModuleNode::GetFuncFromEnv(tvm::runtime::String const&)
+  File "/home/guanjen375/tvm_rvv/src/runtime/module.cc", line 119
+InternalError: Check failed: (f != nullptr) is false: Cannot find function conv2d_kernel in the imported modules or global registry. If this involves ops from a contrib library like cuDNN, ensure TVM was built with the relevant library.

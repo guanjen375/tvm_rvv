@@ -28,7 +28,7 @@ endif()
 # Alernatively, use cmake -DOPTION=VALUE through command-line.
 tvm_option(USE_CUDA "Build with CUDA" OFF)
 tvm_option(USE_my_device "Build with my_device" OFF)
-tvm_option(TVM_MY_DEVICE_USE_LLVM "my_device backend mode: ON=LLVM(cross-compile), OFF=C++ runtime" ON)
+tvm_option(TVM_MY_DEVICE_USE_LLVM "my_device backend mode: ON=LLVM(cross-compile), OFF=C++ runtime" OFF)
 tvm_option(USE_NCCL "Build with NCCL" OFF)
 tvm_option(USE_MSCCL "Build with MSCCL" OFF)
 tvm_option(USE_OPENCL "Build with OpenCL" OFF)
