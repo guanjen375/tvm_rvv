@@ -15,7 +15,7 @@ except Exception:
 NAME   = sys.argv[1]
 MODEL  = NAME + ".onnx"
 OUT_SO = NAME + ".so"
-CROSS  = "riscv64-linux-gnu-g++"  # 依你的工具鏈
+CROSS  = "riscv64-unknown-linux-gnu-g++"  # 依你的工具鏈
 
 ex = None
 mod = None
